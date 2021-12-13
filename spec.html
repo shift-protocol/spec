@@ -1,0 +1,349 @@
+<pre class=metadata>
+    Title: Test spec
+    toc: true
+    contributors: "xxx"
+</pre>
+
+
+<emu-clause id="definitions">
+    <h1>
+      Definitions
+    </h1>
+    <ul>
+        <li><dfn id="data-stream">host</dfn>: the controlling application, typically a terminal.</li>
+        <li><dfn id="data-stream">data stream</dfn>: the main communication channel between the host and the application, in most cases a PTY or an SSH or serial connection.</li>
+        <li><dfn id="packet" variants="packets">packet</dfn>: a single unit of communication on the <emu-xref href="#transport-layer" title /></li>
+        <li><dfn id="message" variants="messages">message</dfn>: a single unit of communication on the <emu-xref href="#message-layer" title /></li>
+        <li><dfn id="transport-prefix">transport prefix</dfn>: a byte sequence identifying the start of a packet: <pre><code class="language-html">
+            \x1b]1337;Toffee;S;  // TODO
+        </code></pre></li>
+        <li><dfn id="transport-suffix">transport suffix</dfn>: a single byte sequence identifying the end of a packet: <pre><code class="language-html">
+            \x07  // TODO
+        </code></pre></li>
+        <li><dfn id="transfer">transfer</dfn>: an operation involving sending one or multiple files.</li>
+        <li><dfn id="inbound-transfer">inbound transfer</dfn>: a transfer that's incoming from the point of view of the process.</li>
+        <li><dfn id="outbound-transfer">outbound transfer</dfn>: a transfer that's outgoing from the point of view of the process.</li>
+        <li><dfn id="sending">sending</dfn>: an outbound transfer from the point of view of the process initiating it.</li>
+        <li><dfn id="receiving">receiving</dfn>: a inbound transfer from the point of view of the process initiating it.</li>
+    </ul>
+</emu-clause>
+
+<emu-clause id="layer-overview">
+    <h1>
+      Protocol layers
+    </h1>
+    <ul>
+        <li>
+            <emu-xref href="#transport-layer" title></emu-xref>
+        </li>
+        <li>
+            <emu-xref href="#message-layer" title></emu-xref>
+        </li>
+    </ul>
+
+    <emu-clause id="transport-layer">
+        <h1>
+        Transport Layer
+        </h1>
+        <p>Provides a communication stream that is transparent to the terminal.</p>
+        <p>Transport layer encodes/decodes packets into/from the data stream. Packets can be written into the data stream in chunks, but cannot be interleaved with other data.</p>
+
+        <emu-note>This encoding was chosen so that:
+            <ul>
+                <li>Output is ignored by unsupported terminals as it's an unknown OSC sequence.</li>
+                <li>Echoed input is ignored by unsupported terminals for the same reason.</li>
+                <li>It's transparent to Unicode processing and 7-bit-only channels.</li>
+            </ul>
+        </emu-note>
+
+        <emu-clause id="packet-structure">
+            <h1>Packet structure</h1>
+            <pre><code class="language-protobuf">
+                [packet prefix] [base64-encoded contents] [packet suffix]
+            </code></pre>
+        </emu-clause>
+    </emu-clause>
+
+    <emu-clause id="message-layer">
+        <h1>
+        Message Layer
+        </h1>
+
+        <p>Encodes structured protocol messages using Protobuf 3.</p>
+
+        <emu-note>This encoding choice ensures future compatibility, should new fields or messages be added to the protocol.</emu-note>
+
+        <p>Messages are encoded and written into the transport layer one by one. A message may not be split into multiple packets.</p>
+
+        <emu-clause id="messages">
+            <h1>Messages</h1>
+            <ul>
+                <li>
+                    <dfn id="msg-Message">Message</dfn>: this is the top-level wrapper for all other messages and the only one message that is read or written into the transport layer.
+                    <pre><code class="language-protobuf">
+                        message Message {
+                            oneof content {
+                                Init init = 1;
+                                Disconnect disconnect = 2;
+                                ReceiveRequest receiveRequest = 3;
+                                SendRequest sendRequest = 4;
+                                AcceptTransfer acceptTransfer = 5;
+                                RejectTransfer rejectTransfer = 6;
+                                OpenFile openFile = 7;
+                                FileOpened fileOpened = 8;
+                                Chunk chunk = 9;
+                                CloseFile closeFile = 10;
+                                CloseTransfer closeTransfer = 11;
+                            }
+                        }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-Init">Init</dfn>: one of the sides announces itself.
+                    <pre><code class="language-protobuf">
+                        message Init {
+                            uint32 version = 1;
+                            repeated string features = 2;
+                        }
+                    </code></pre>
+                    <p><pre>Version</pre> currently 1.</p>
+                    <p><pre>Features</pre> currently unused. //TODO</p>
+                </li>
+                <li>
+                    <dfn id="msg-FileInfo">FileInfo</dfn>: a sub-message describing file metadata.
+                    <pre><code class="language-protobuf">
+                        message FileInfo {
+                            string name = 1;
+                            uint64 size = 2;
+                            uint32 mode = 3;
+                        }
+                    </code></pre>
+                    <p><pre>mode</pre> POSIX file mode, the host is free to ignore all bits except for "is directory".</p>
+                </li>
+                <li>
+                    <dfn id="msg-ReceiveRequest">ReceiveRequest</dfn>: the sender would like the host to initiate an outbound transfer by transmitting back a SendRequest.
+                    <pre><code class="language-protobuf">
+                        message ReceiveRequest {
+                            bool allowDirectories = 1;
+                        }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-SendRequest">SendRequest</dfn>: the sender would like to initiate an inbound transfer on the host.
+                    <pre><code class="language-protobuf">
+                        message SendRequest {
+                            FileInfo fileInfo = 1;
+                        }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-AcceptTransfer">AcceptTransfer</dfn>: the sender accepts the transfer requested from it in the last received message.
+                    <pre><code class="language-protobuf">
+                        message AcceptTransfer { }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-RejectTransfer">RejectTransfer</dfn>: the sender rejects the transfer requested from it in the last received message.
+                    <pre><code class="language-protobuf">
+                        message RejectTransfer { }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-OpenFile">OpenFile</dfn>: the sender would like to start transmitting a new file within the currently open transfer.
+                    <pre><code class="language-protobuf">
+                        message OpenFile {
+                            FileInfo fileInfo = 1;
+                        }
+                    </code></pre>
+                    <p><pre>fileInfo.name</pre> for file transfers, only `.` is allowed. For directory transfers, it's a path relative to the directory being transferred.</p>
+                </li>
+                <li>
+                    <dfn id="msg-FileOpened">FileOpened</dfn>: the sender has the file requested in the last received message for writing and is ready to receive chunks.
+                    <pre><code class="language-protobuf">
+                        message FileOpened {
+                            uint64 continueFrom = 1;
+                        }
+                    </code></pre>
+                    <p><pre>continueFrom</pre> if not zero, the sender would like to start receiving chunks starting from this byte offset.</p>
+                </li>
+                <li>
+                    <dfn id="msg-Chunk">Chunk</dfn>: the sender is providing the next chunk of the current file's contents.
+                    <pre><code class="language-protobuf">
+                        message Chunk {
+                            uint64 offset = 1;
+                            bytes data = 2;
+                        }
+                    </code></pre>
+                    <p><pre></pre> .</p>
+                </li>
+                <li>
+                    <dfn id="msg-CloseFile">CloseFile</dfn>: the sender would has finished transmitting the current file and would like the receiver to close it.
+                    <pre><code class="language-protobuf">
+                        message CloseFile { }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-CloseTransfer">CloseTransfer</dfn>: the sender has transmitted all files and would like to close the current transfer.
+                    <pre><code class="language-protobuf">
+                        message CloseTransfer { }
+                    </code></pre>
+                </li>
+                <li>
+                    <dfn id="msg-Disconnect">Disconnect</dfn>: the sender would like to immediately cease communication.
+                    <pre><code class="language-protobuf">
+                        message Disconnect { }
+                    </code></pre>
+                </li>
+            </ul>
+        </emu-clause>
+    </emu-clause>
+</emu-clause>
+
+<emu-clause id="behaviour">
+    <h1>
+      Behaviour
+    </h1>
+    <p>
+        The protocol's behaviour is defined as a finite state machine with the following states and transitions between these states.
+    </p>
+
+    <emu-clause id="states">
+        <h1>
+          States
+        </h1>
+        <p>
+            The protocol's behaviour is defined as a finite state machine with the following states:
+            <ul>
+                <li><dfn id="state-Initial">Initial</dfn>: no connection has been established.</li>
+                <li><dfn id="state-Connecting">Connecting</dfn>: sent an Init message and waiting for an Init from the other side.</li>
+                <li><dfn id="state-Idle">Idle</dfn>: ready to start transfers.</li>
+                <li><dfn id="state-InboundTransferRequested">InboundTransferRequested</dfn>: sent a request for an inbound transfer, waiting for a SendRequest.</li>
+                <li><dfn id="state-InboundTransferOffered">InboundTransferOffered</dfn>: got a request for an inbound transfer, will accept or reject.</li>
+                <li><dfn id="state-InboundTransfer">InboundTransfer</dfn>: an inbound transfer is in progress, no file open.</li>
+                <li><dfn id="state-InboundTransferOpening">InboundTransferOpening</dfn>: an inbound transfer is in progress and a file is being opened.</li>
+                <li><dfn id="state-InboundFileTransfer">InboundFileTransfer</dfn>: an inbound transfer is in progress and a file is open for writing.</li>
+                <li><dfn id="state-OutboundTransferRequested">OutboundTransferRequested</dfn>: sent a request for an outbound transfer, waiting for confirmation.</li>
+                <li><dfn id="state-OutboundTransferOffered">OutboundTransferOffered</dfn>: received a request for an outbound transfer, will send a SendRrquest.</li>
+                <li><dfn id="state-OutboundTransfer">OutboundTransfer</dfn>: an outbound transfer is in progress, no file open.</li>
+                <li><dfn id="state-OutboundTransferOpening">OutboundTransferOpening</dfn>: an outbound transfer is in progress and a file is being opened.</li>
+                <li><dfn id="state-OutboundFileTransfer">OutboundFileTransfer</dfn>: an outbound transfer is in progress and a file is open for writing.</li>
+                <li><dfn id="state-Disconnected">Disconnected</dfn>: the connection was closed.</li>
+            </ul>
+        </p>
+    </emu-clause>
+
+    <emu-clause id="transitions">
+        <h1>
+          State transitions
+        </h1>
+        <emu-note>
+            Here, an arrow (&rarr;) denotes a transition to another state, <em>emit</em> denotes sending a message, and <em>received</em> denotes receiption of a message, which must then trigger its transition unconditionally.
+        </emu-note>
+        <p>
+            The possible state transitions are:
+            <ul>
+                <li>
+                    From any state:
+                    <ul>
+                        <li><em>Abort connection:</em> emit Disconnect; &rarr; Disconnected.</li>
+                        <li><em>Received Disconnect:</em> &rarr; Disconnected.</li>
+                    </ul>
+                </li>
+                <li>
+                    From Initial:
+                    <ul>
+                        <li><em>Received Init:</em> emit Init; &rarr; Idle.</li>
+                        <li><em>Initiate connection:</em> emit Init; &rarr; Connecting.</li>
+                    </ul>
+                </li>
+                <li>
+                    From Connecting:
+                    <ul>
+                        <li><em>Received Init:</em> &rarr; Idle.</li>
+                    </ul>
+                </li>
+                <li>
+                    From Idle:
+                    <ul>
+                        <li><em>Received SendRequest:</em> &rarr; InboundTransferOffered.</li>
+                        <li><em>Received ReceiveRequest:</em> &rarr; OutboundTransferOffered.</li>
+                        <li><em>Request inbound transfer:</em> emit ReceiveRequest; &rarr; InboundTransferRequested.</li>
+                        <li><em>Request outbound transfer:</em> emit SendRequest; &rarr; OutboundTransferRequested.</li>
+                    </ul>
+                </li>
+                <li>
+                    From InboundTransferRequested:
+                    <em>Same as Idle. // TODO ?</em>
+                </li>
+                <li>
+                    From InboundTransferOffered:
+                    <ul>
+                        <li><em>Accept transfer:</em> emit AcceptTransfer; &rarr; InboundTransfer.</li>
+                        <li><em>Reject transfer:</em> emit RejectTransfer; &rarr; Idle.</li>
+                    </ul>
+                </li>
+                <li>
+                    From InboundTransfer, InboundTransferOpening, OutboundTransfer or OutboundTransferOpening:
+                    <ul>
+                        <li><em>Received CloseTransfer:</em> &rarr; Idle.</li>
+                        <li><em>Close transfer:</em> emit CloseTransfer; &rarr; Idle.</li>
+                    </ul>
+                </li>
+                <li>
+                    From InboundTransfer
+                    <ul>
+                        <li><em>Received OpenFile:</em> &rarr; InboundTransferOpening.</li>
+                    </ul>
+                </li>
+                <li>
+                    From InboundTransferOpening
+                    <ul>
+                        <li><em>File opened:</em> emit FileOpened; &rarr; InboundFileTransfer.</li>
+                    </ul>
+                </li>
+                <li>
+                    From InboundFileTransfer
+                    <ul>
+                        <li><em>Received Chunk:</em> write out chunk.</li>
+                        <li><em>Received CloseFile:</em> close file; &rarr; InboundTransfer.</li>
+                        <li><em>Close file:</em> emit CloseFile; &rarr; Idle.</li>
+                    </ul>
+                </li>
+                <li>
+                    From OutboundTransferRequested:
+                    <ul>
+                        <li><em>Received AcceptTransfer:</em> &rarr; OutboundTransfer.</li>
+                        <li><em>Received RejectTransfer:</em> &rarr; Idle.</li>
+                    </ul>
+                </li>
+                <li>
+                    From OutboundTransferOffered:
+                    <ul>
+                        <li><em>Accept transfer:</em> emit emit SendRequest; &rarr; OutboundTransferRequested.</li>
+                        <li><em>Reject transfer:</em> &rarr; Idle.</li>
+                    </ul>
+                </li>
+                <li>
+                    From OutboundTransfer:
+                    <ul>
+                        <li><em>Open a file:</em> emit OpenFile; &rarr; OutboundTransferOpening.</li>
+                    </ul>
+                </li>
+                <li>
+                    From OutboundTransferOpening:
+                    <ul>
+                        <li><em>Received FileOpened:</em> &rarr; OutboundFileTransfer.</li>
+                    </ul>
+                </li>
+                <li>
+                    From OutboundFileTransfer:
+                    <ul>
+                        <li><em>Received CloseFile:</em> &rarr; OutboundTransfer.</li>
+                        <li><em>Send a chunk:</em> emit Chunk.</li>
+                        <li><em>Close file:</em> emit CloseFile; &rarr; OutboundTransfer.</li>
+                    </ul>
+                </li>
+            </ul>
+        </p>
+    </emu-clause>
+</emu-clause>

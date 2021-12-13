@@ -1,0 +1,14 @@
+{
+  "name": "toffee-spec",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "BSD",
+  "private": true,
+  "scripts": {
+    "build": "ecmarkup spec.html spec.out.html",
+    "watch": "ecmarkup --watch spec.html spec.out.html"
+  },
+  "devDependencies": {
+    "ecmarkup": "^9.6.5"
+  }
+}
