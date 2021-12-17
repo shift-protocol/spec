@@ -1,12 +1,12 @@
 {
-  "name": "toffee-spec",
+  "name": "shift-spec",
   "version": "1.0.0",
   "main": "index.js",
   "license": "BSD",
   "private": true,
   "scripts": {
-    "build": "ecmarkup spec.html spec.out.html",
-    "watch": "ecmarkup --watch spec.html spec.out.html"
+    "build": "ecmarkup spec.html public/index.html",
+    "watch": "ecmarkup --watch spec.html public/index.html"
   },
   "devDependencies": {
     "ecmarkup": "^9.6.5"

@@ -1,9 +1,25 @@
 <pre class=metadata>
-    Title: Test spec
+    Title: SHIFT Spec
     toc: true
-    contributors: "xxx"
+    contributors: "SHIFT contributors"
 </pre>
 
+<h1>SHIFT: a System for Handling Impeccable File Transfers</h1>
+
+<emu-clause id="protocol-summary">
+    <h1>
+        Summary
+    </h1>
+    <p>
+        This spec suggests a modern, extensible alternative to Zmodem which supports directory transfers and is transparent to both Unicode processing and 7-bit serial connections. All data is incapsulated inside OSC control sequences, which are transparent to terminals and terminal emulators, and won't corrupt terminal state if a connection is lost or one of the sides doesn't understand the protocol. Unlike Zmodem, it also allows normal terminal I/O to continue while a transfer is in progress.
+    </p>
+    <p>
+        Once both sides have announced their presence, any side can offer an outbound transfer, or suggest to the other side to initiate an outbound transfer itself. Multiple transfers in any direction can happen within a single session.
+    </p>
+    <p>
+        A single transfer can contain either a single file, or a single directory with its contents. If one side accepts an inbound transfer, it grants, in case of a file transfer, write access to a file, or in case of a directory, write access to any number of files within the target directory. The other side can then open files and write data to them.
+    </p>
+</emu-clause>
 
 <emu-clause id="definitions">
     <h1>
@@ -15,10 +31,10 @@
         <li><dfn id="packet" variants="packets">packet</dfn>: a single unit of communication on the <emu-xref href="#transport-layer" title /></li>
         <li><dfn id="message" variants="messages">message</dfn>: a single unit of communication on the <emu-xref href="#message-layer" title /></li>
         <li><dfn id="transport-prefix">transport prefix</dfn>: a byte sequence identifying the start of a packet: <pre><code class="language-html">
-            \x1b]1337;Toffee;S;  // TODO
+            \x1b]1337;SHIFT;
         </code></pre></li>
         <li><dfn id="transport-suffix">transport suffix</dfn>: a single byte sequence identifying the end of a packet: <pre><code class="language-html">
-            \x07  // TODO
+            \x07
         </code></pre></li>
         <li><dfn id="transfer">transfer</dfn>: an operation involving sending one or multiple files.</li>
         <li><dfn id="inbound-transfer">inbound transfer</dfn>: a transfer that's incoming from the point of view of the process.</li>
@@ -203,8 +219,9 @@
     <h1>
       Behaviour
     </h1>
+
     <p>
-        The protocol's behaviour is defined as a finite state machine with the following states and transitions between these states.
+        The protocol's behaviour is defined as a finite state machine with the following well-defined states and transitions between these states.
     </p>
 
     <emu-clause id="states">
